@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Directory Image Comparator</title>
+    <style>
+        :root {
+            --accent-color: #3b82f6;
+            --bg-color: #1e293b;
+            --text-color: #f1f5f9;
+            --panel-bg: #334155;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h2 { margin-bottom: 20px; }
+
+        /* --- Controls Section --- */
+        .controls {
+            background-color: var(--panel-bg);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 15px;
+            width: 100%;
+            max-width: 900px;
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-group label {
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+            color: #94a3b8;
+        }
+
+        input {
+            background: var(--bg-color);
+            border: 1px solid #475569;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        button {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 0 25px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 21px; /* Align with inputs */
+            transition: background 0.2s;
+        }
+
+        button:hover { background-color: #2563eb; }
+
+        /* --- Slider Container --- */
+        .comparison-container {
+            position: relative;
+            width: 100%; /* Responsive width */
+            max-width: 900px;
+            /* Aspect ratio will be determined by image content, 
+               but we set a min-height to show empty state */
+            min-height: 400px; 
+            background-color: #0f172a;
+            border: 2px solid #475569;
+            border-radius: 4px;
+            overflow: hidden;
+            user-select: none; /* Prevent text highlighting while dragging */
+        }
+
+        /* The Base Image (Right side / "After") */
+        .img-wrapper-base {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .img-wrapper-base img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        /* The Overlay Image (Left side / "Before") */
+        .img-wrapper-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 50%; /* Starting position */
+            height: 100%;
+            overflow: hidden;
+            border-right: 2px solid var(--accent-color);
+            background-color: #0f172a; /* Fallback if image fails */
+        }
+
+        /* This image needs to be the same full width as the base, 
+           but clipped by its parent div */
+        .img-wrapper-overlay img {
+            display: block;
+            height: 100%;
+            /* Important: Width must match the container width, 
+               not the overlay wrapper width */
+            width: 900px; 
+            max-width: none; 
+        }
+
+        /* --- The Handle --- */
+        .handle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            background-color: var(--accent-color);
+            border-radius: 50%;
+            cursor: ew-resize;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .handle::after {
+            content: "↔";
+            color: white;
+            font-weight: bold;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .controls { grid-template-columns: 1fr; }
+            button { margin-top: 0; }
+        }
+
+        .error-msg {
+            color: #ef4444;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Directory Image Comparator</h2>
+
+    <div class="controls">
+        <div class="input-group">
+            <label>Directory 1 URL (Left/Overlay)</label>
+            <input type="text" id="dir1" placeholder="e.g., https://site.com/v1/" value="https://loremflickr.com/800/600/city?lock=1">
+        </div>
+        <div class="input-group">
+            <label>Directory 2 URL (Right/Base)</label>
+            <input type="text" id="dir2" placeholder="e.g., https://site.com/v2/" value="https://loremflickr.com/800/600/city?lock=2">
+        </div>
+        <div class="input-group">
+            <label>Filename</label>
+            <input type="text" id="filename" placeholder="image.jpg (Optional if URLs are full)">
+        </div>
+        <button onclick="loadImages()">Load Images</button>
+    </div>
+    
+    <div id="error" class="error-msg">Error loading one or both images. Check URLs.</div>
+
+    <div class="comparison-container" id="container">
+        <div class="img-wrapper-base">
+            <img id="image-right" src="" alt="Right Image">
+        </div>
+
+        <div class="img-wrapper-overlay" id="overlay">
+            <img id="image-left" src="" alt="Left Image">
+        </div>
+
+        <div class="handle" id="handle"></div>
+    </div>
+
+    <script>
+        const container = document.getElementById('container');
+        const overlay = document.getElementById('overlay');
+        const handle = document.getElementById('handle');
+        const imgLeft = document.getElementById('image-left');
+        const imgRight = document.getElementById('image-right');
+        const errorMsg = document.getElementById('error');
+        
+        // Initial setup for the overlay image width calculation
+        let containerWidth = 0;
+
+        function loadImages() {
+            let d1 = document.getElementById('dir1').value.trim();
+            let d2 = document.getElementById('dir2').value.trim();
+            const fname = document.getElementById('filename').value.trim();
+
+            // Handle trailing slashes logic
+            if (fname) {
+                if (d1 && !d1.endsWith('/')) d1 += '/';
+                if (d2 && !d2.endsWith('/')) d2 += '/';
+                imgLeft.src = d1 + fname;
+                imgRight.src = d2 + fname;
+            } else {
+                // Assume full URLs were pasted in directory boxes
+                imgLeft.src = d1;
+                imgRight.src = d2;
+            }
+
+            // Reset Slider Position
+            overlay.style.width = '50%';
+            handle.style.left = '50%';
+            errorMsg.style.display = 'none';
+
+            // Wait for image load to fix dimensions
+            imgRight.onload = function() {
+                resizeOverlayImage();
+            }
+            imgLeft.onerror = () => errorMsg.style.display = 'block';
+            imgRight.onerror = () => errorMsg.style.display = 'block';
+        }
+
+        // Ensure the inner image of the overlay matches the container width exactly
+        function resizeOverlayImage() {
+            containerWidth = container.offsetWidth;
+            imgLeft.style.width = containerWidth + 'px';
+        }
+
+        // Listen for window resize to adjust image scaling
+        window.addEventListener('resize', resizeOverlayImage);
+
+        // --- Drag Logic ---
+        let isDragging = false;
+
+        const onMove = (e) => {
+            if (!isDragging) return;
+            
+            // Get x position depending on mouse or touch
+            let clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            
+            let rect = container.getBoundingClientRect();
+            let positionX = clientX - rect.left;
+
+            // Constrain within container bounds
+            if (positionX < 0) positionX = 0;
+            if (positionX > rect.width) positionX = rect.width;
+
+            // Apply styles
+            overlay.style.width = positionX + "px";
+            handle.style.left = positionX + "px";
+        }
+
+        // Mouse Events
+        container.addEventListener('mousedown', () => isDragging = true);
+        window.addEventListener('mouseup', () => isDragging = false);
+        window.addEventListener('mousemove', onMove);
+
+        // Touch Events (Mobile)
+        container.addEventListener('touchstart', () => isDragging = true);
+        window.addEventListener('touchend', () => isDragging = false);
+        window.addEventListener('touchmove', onMove);
+
+        // Initial Load of Placeholder Images
+        window.onload = function() {
+            loadImages(); // Loads the placeholder loremflickr images
+        };
+    </script>
+</body>
+</html>
